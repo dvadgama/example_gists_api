@@ -36,29 +36,58 @@ curl -i 'http://localhost:8080/v1/user/octocat/gists?page=1&per_page=2'
 curl -i http://localhost:8080/health
 ```
 
-## Develop with VS Code (once implemented)
+## Develop with VS Code
 
 Prerequisites: VS Code, its Dev Containers extension, and Docker.
 
 1. Open the repository in VS Code.
 2. Select **Dev Containers: Reopen in Container**.
-3. Allow the environment to install the pinned Python version, locked dependencies, and development tools.
-4. Start the application from the container terminal:
+3. Wait for the container to build. uv installs the Python version specified by `requires-python` in `pyproject.toml`.
+4. Check the tools in the container terminal:
 
    ```bash
-   uv run uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
+   uv --version
+   python --version
    ```
 
-The Dev Container will forward port `8080` and include debugging, pytest, and Ruff. It will use the same Python version and locked runtime dependencies as the Docker image.
+The setup includes Python, uv, pytest, pytest-cov, Ruff, and pre-commit. VS Code has Python test discovery and Ruff formatting enabled. The Dev Container installs the locked development dependencies and Git commit hooks after creation. Application code, runtime dependencies, tests, and the runtime Dockerfile will follow later.
 
-## Tests and code checks (once implemented)
+The Python version is defined only in `pyproject.toml`; there is no `.python-version` file. After changing it, use **Dev Containers: Rebuild Container**. The virtual environment lives at `/home/vscode/.venv`, outside the mounted source folder, and the container runs as the non-root `vscode` user.
+
+To build and check the development image without opening VS Code, run these commands from the repository root:
+
+```bash
+docker build -f .devcontainer/Dockerfile -t github-api-dev .
+docker run --rm github-api-dev uv --version
+docker run --rm github-api-dev python --version
+```
+
+## Tests and code checks
 
 Inside the development environment:
 
 ```bash
-uv run pytest
-uv run ruff check .
-uv run ruff format --check .
+uv run --locked pre-commit run --all-files
+uv run --locked ruff check .
+uv run --locked ruff format --check .
+uv run --locked pytest
+```
+
+The commit hooks check linting and formatting, then run the full test suite when Python files are staged. They report problems without automatically modifying files. To apply formatting, run `uv run --locked ruff format .`.
+
+There are no Python source files or tests yet. The Python hooks currently skip because there are no matching files; running pytest directly reports no tests collected and exits with code `5`. Test failures will block commits once Python files are added.
+
+The hooks are installed for the container environment, so make commits from VS Code while connected to the Dev Container or from its terminal. If setting up another uv environment, install its dependencies and hooks there:
+
+```bash
+uv sync --locked
+uv run --locked pre-commit install
+```
+
+Once the application and tests exist, check the project's 85% coverage target with:
+
+```bash
+uv run --locked pytest --cov=app --cov-branch --cov-report=term-missing --cov-fail-under=85
 ```
 
 The tests will make requests to the app and check its responses. They'll use mocked GitHub responses, so they can run offline. Cases will include Gist retrieval, errors, and timeouts, with pagination and health tests added if those features are implemented.
