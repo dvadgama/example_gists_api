@@ -7,16 +7,6 @@ from app.github import GitHubClient
 
 
 @pytest.fixture
-def public_gists():
-    return [{"id": "123", "description": "Example gist", "public": True}]
-
-
-@pytest.fixture
-def github_requests():
-    return []
-
-
-@pytest.fixture
 def successful_gists_response(public_gists):
     return httpx.Response(200, json=public_gists)
 
