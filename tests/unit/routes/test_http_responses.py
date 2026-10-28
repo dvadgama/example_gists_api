@@ -1,4 +1,4 @@
-import httpx
+import httpx2
 import pytest
 
 
@@ -60,7 +60,7 @@ def test_returns_400_for_invalid_username_without_calling_github(
 def test_returns_504_for_timeout_without_exposing_upstream_error(
     route_client, mock_github_client
 ):
-    mock_github_client.list_public_gists.side_effect = httpx.ReadTimeout(
+    mock_github_client.list_public_gists.side_effect = httpx2.ReadTimeout(
         "Internal upstream error details"
     )
 

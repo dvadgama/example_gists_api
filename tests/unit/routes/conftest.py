@@ -1,6 +1,6 @@
 from unittest.mock import create_autospec
 
-import httpx
+import httpx2
 import pytest
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
@@ -69,11 +69,11 @@ def valid_username(request):
 @pytest.fixture
 def upstream_error_factory():
     def create_error(status_code, headers=None, body=None):
-        request = httpx.Request("GET", "https://api.github.com/users/alice/gists")
-        response = httpx.Response(
+        request = httpx2.Request("GET", "https://api.github.com/users/alice/gists")
+        response = httpx2.Response(
             status_code, headers=headers, request=request, json=body
         )
-        return httpx.HTTPStatusError(
+        return httpx2.HTTPStatusError(
             "Upstream GitHub error", request=request, response=response
         )
 
@@ -82,10 +82,10 @@ def upstream_error_factory():
 
 @pytest.fixture(
     params=[
-        httpx.ConnectTimeout,
-        httpx.ReadTimeout,
-        httpx.WriteTimeout,
-        httpx.PoolTimeout,
+        httpx2.ConnectTimeout,
+        httpx2.ReadTimeout,
+        httpx2.WriteTimeout,
+        httpx2.PoolTimeout,
     ],
     ids=["connect", "read", "write", "pool"],
 )
@@ -95,10 +95,10 @@ def timeout_error(request):
 
 @pytest.fixture(
     params=[
-        httpx.ConnectError,
-        httpx.ReadError,
-        httpx.RemoteProtocolError,
-        httpx.DecodingError,
+        httpx2.ConnectError,
+        httpx2.ReadError,
+        httpx2.RemoteProtocolError,
+        httpx2.DecodingError,
     ],
     ids=["connect", "read", "protocol", "decoding"],
 )

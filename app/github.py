@@ -1,6 +1,6 @@
 from urllib.parse import quote
 
-import httpx
+import httpx2
 
 
 class InvalidGitHubResponseError(Exception):
@@ -8,7 +8,7 @@ class InvalidGitHubResponseError(Exception):
 
 
 class GitHubClient:
-    def __init__(self, http_client: httpx.Client):
+    def __init__(self, http_client: httpx2.Client):
         self._http_client = http_client
 
     def list_public_gists(self, username: str) -> list[dict[str, object]]:

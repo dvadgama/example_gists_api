@@ -1,4 +1,4 @@
-import httpx
+import httpx2
 import pytest
 
 from app.github import InvalidGitHubResponseError
@@ -74,7 +74,7 @@ def test_preserves_upstream_http_error(
 ):
     github_client = github_client_factory(upstream_error_response)
 
-    with pytest.raises(httpx.HTTPStatusError) as caught:
+    with pytest.raises(httpx2.HTTPStatusError) as caught:
         github_client.list_public_gists("octocat")
 
     assert caught.value.response is upstream_error_response
@@ -87,7 +87,7 @@ def test_preserves_timeout_without_retry(
 ):
     github_client = github_client_factory(timeout_error)
 
-    with pytest.raises(httpx.TimeoutException) as caught:
+    with pytest.raises(httpx2.TimeoutException) as caught:
         github_client.list_public_gists("octocat")
 
     assert caught.value is timeout_error
@@ -100,7 +100,7 @@ def test_preserves_network_error_without_retry(
 ):
     github_client = github_client_factory(network_error)
 
-    with pytest.raises(httpx.NetworkError) as caught:
+    with pytest.raises(httpx2.NetworkError) as caught:
         github_client.list_public_gists("octocat")
 
     assert caught.value is network_error

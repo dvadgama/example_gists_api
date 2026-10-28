@@ -1,4 +1,4 @@
-import httpx
+import httpx2
 import pytest
 from fastapi import HTTPException
 
@@ -152,7 +152,7 @@ def test_preserves_valid_retry_after_for_rate_limit(
 
     assert caught.value.status_code == 503
     assert (
-        httpx.Headers(caught.value.headers or {}).get("retry-after")
+        httpx2.Headers(caught.value.headers or {}).get("retry-after")
         == valid_retry_after
     )
     mock_github_client.list_public_gists.assert_called_once_with("alice")
@@ -170,7 +170,7 @@ def test_does_not_forward_invalid_retry_after(
         list_public_gists(username="alice", request=route_request)
 
     assert caught.value.status_code == 503
-    assert "retry-after" not in httpx.Headers(caught.value.headers or {})
+    assert "retry-after" not in httpx2.Headers(caught.value.headers or {})
     mock_github_client.list_public_gists.assert_called_once_with("alice")
 
 
@@ -186,5 +186,5 @@ def test_does_not_forward_retry_after_for_other_upstream_errors(
         list_public_gists(username="alice", request=route_request)
 
     assert caught.value.status_code == 502
-    assert "retry-after" not in httpx.Headers(caught.value.headers or {})
+    assert "retry-after" not in httpx2.Headers(caught.value.headers or {})
     mock_github_client.list_public_gists.assert_called_once_with("alice")

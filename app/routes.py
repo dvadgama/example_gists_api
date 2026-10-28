@@ -1,7 +1,7 @@
 from email.utils import format_datetime, parsedate_to_datetime
 from re import fullmatch
 
-import httpx
+import httpx2
 from fastapi import APIRouter, HTTPException, Request
 
 from app.github import GitHubClient, InvalidGitHubResponseError
@@ -23,7 +23,7 @@ def _valid_retry_after(value: str | None) -> str | None:
     return None
 
 
-def _is_rate_limit(response: httpx.Response, retry_after: str | None) -> bool:
+def _is_rate_limit(response: httpx2.Response, retry_after: str | None) -> bool:
     if response.status_code == 429:
         return True
     if response.status_code != 403:
@@ -49,11 +49,11 @@ def list_public_gists(username: str, request: Request) -> list[dict[str, object]
     github_client: GitHubClient = request.app.state.github_client
     try:
         return github_client.list_public_gists(username)
-    except httpx.TimeoutException as error:
+    except httpx2.TimeoutException as error:
         raise HTTPException(
             status_code=504, detail="GitHub request timed out"
         ) from error
-    except httpx.HTTPStatusError as error:
+    except httpx2.HTTPStatusError as error:
         if error.response.status_code == 404:
             raise HTTPException(
                 status_code=404, detail="GitHub user not found"
@@ -71,5 +71,5 @@ def list_public_gists(username: str, request: Request) -> list[dict[str, object]
         raise HTTPException(
             status_code=502, detail="GitHub returned an invalid response"
         ) from error
-    except httpx.RequestError as error:
+    except httpx2.RequestError as error:
         raise HTTPException(status_code=502, detail="GitHub request failed") from error

@@ -1,6 +1,6 @@
 import json
 
-import httpx
+import httpx2
 import pytest
 
 from app.github import GitHubClient
@@ -8,12 +8,12 @@ from app.github import GitHubClient
 
 @pytest.fixture
 def successful_gists_response(public_gists):
-    return httpx.Response(200, json=public_gists)
+    return httpx2.Response(200, json=public_gists)
 
 
 @pytest.fixture
 def empty_gists_response():
-    return httpx.Response(200, json=[])
+    return httpx2.Response(200, json=[])
 
 
 @pytest.fixture(
@@ -21,7 +21,7 @@ def empty_gists_response():
     ids=["empty-body", "html-body", "malformed-json"],
 )
 def invalid_json_response(request):
-    return httpx.Response(200, content=request.param)
+    return httpx2.Response(200, content=request.param)
 
 
 @pytest.fixture(
@@ -36,7 +36,7 @@ def invalid_json_response(request):
     ids=["null", "object", "string", "null-item", "string-item", "nested-list"],
 )
 def invalid_gist_list_response(request):
-    return httpx.Response(
+    return httpx2.Response(
         200,
         content=json.dumps(request.param),
         headers={"Content-Type": "application/json"},
@@ -48,15 +48,15 @@ def invalid_gist_list_response(request):
     ids=["forbidden", "not-found", "rate-limited", "server-error", "unavailable"],
 )
 def upstream_error_response(request):
-    return httpx.Response(request.param, text="Upstream error")
+    return httpx2.Response(request.param, text="Upstream error")
 
 
 @pytest.fixture(
     params=[
-        httpx.ConnectTimeout,
-        httpx.ReadTimeout,
-        httpx.WriteTimeout,
-        httpx.PoolTimeout,
+        httpx2.ConnectTimeout,
+        httpx2.ReadTimeout,
+        httpx2.WriteTimeout,
+        httpx2.PoolTimeout,
     ],
     ids=["connect", "read", "write", "pool"],
 )
@@ -65,7 +65,7 @@ def timeout_error(request):
 
 
 @pytest.fixture(
-    params=[httpx.ConnectError, httpx.ReadError],
+    params=[httpx2.ConnectError, httpx2.ReadError],
     ids=["connect", "read"],
 )
 def network_error(request):
@@ -77,16 +77,16 @@ def github_client_factory(settings, github_requests):
     http_clients = []
 
     def create_client(response_or_error):
-        def respond(request: httpx.Request) -> httpx.Response:
+        def respond(request: httpx2.Request) -> httpx2.Response:
             github_requests.append(request)
             if isinstance(response_or_error, Exception):
                 raise response_or_error
             return response_or_error
 
-        http_client = httpx.Client(
+        http_client = httpx2.Client(
             base_url=settings.github_base_url,
             timeout=settings.github_timeout_seconds,
-            transport=httpx.MockTransport(respond),
+            transport=httpx2.MockTransport(respond),
         )
         http_clients.append(http_client)
         return GitHubClient(http_client)
