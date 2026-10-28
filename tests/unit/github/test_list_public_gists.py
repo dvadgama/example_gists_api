@@ -6,8 +6,14 @@ from app.github import InvalidGitHubResponseError
 
 @pytest.mark.mock
 def test_lists_public_gists_for_user(
-    github_client, public_gists, github_requests, settings
+    github_client_factory,
+    successful_gists_response,
+    public_gists,
+    github_requests,
+    settings,
 ):
+    github_client = github_client_factory(successful_gists_response)
+
     result = github_client.list_public_gists("octocat")
 
     assert result == public_gists
@@ -28,9 +34,9 @@ def test_lists_public_gists_for_user(
 
 @pytest.mark.mock
 def test_returns_empty_list_when_user_has_no_public_gists(
-    github_client, public_gists, github_requests
+    github_client_factory, empty_gists_response, github_requests
 ):
-    public_gists.clear()
+    github_client = github_client_factory(empty_gists_response)
 
     result = github_client.list_public_gists("octocat")
 
@@ -39,17 +45,11 @@ def test_returns_empty_list_when_user_has_no_public_gists(
 
 
 @pytest.mark.mock
-@pytest.mark.parametrize(
-    "github_response",
-    [
-        httpx.Response(200, content=b""),
-        httpx.Response(200, text="<html>Not JSON</html>"),
-        httpx.Response(200, text='[{"id":'),
-    ],
-    ids=["empty-body", "html-body", "malformed-json"],
-    indirect=True,
-)
-def test_rejects_invalid_json(github_client, github_response, github_requests):
+def test_rejects_invalid_json(
+    github_client_factory, invalid_json_response, github_requests
+):
+    github_client = github_client_factory(invalid_json_response)
+
     with pytest.raises(InvalidGitHubResponseError, match="invalid JSON"):
         github_client.list_public_gists("octocat")
 
@@ -57,20 +57,11 @@ def test_rejects_invalid_json(github_client, github_response, github_requests):
 
 
 @pytest.mark.mock
-@pytest.mark.parametrize(
-    "github_response",
-    [
-        httpx.Response(200, content=b"null"),
-        httpx.Response(200, json={"message": "Unexpected response"}),
-        httpx.Response(200, json="not a list"),
-        httpx.Response(200, json=[None]),
-        httpx.Response(200, json=["not a gist"]),
-        httpx.Response(200, json=[[{}]]),
-    ],
-    ids=["null", "object", "string", "null-item", "string-item", "nested-list"],
-    indirect=True,
-)
-def test_rejects_invalid_gist_list(github_client, github_response, github_requests):
+def test_rejects_invalid_gist_list(
+    github_client_factory, invalid_gist_list_response, github_requests
+):
+    github_client = github_client_factory(invalid_gist_list_response)
+
     with pytest.raises(InvalidGitHubResponseError, match="invalid Gist list"):
         github_client.list_public_gists("octocat")
 
@@ -78,60 +69,39 @@ def test_rejects_invalid_gist_list(github_client, github_response, github_reques
 
 
 @pytest.mark.mock
-@pytest.mark.parametrize(
-    "github_response",
-    [
-        httpx.Response(status, text="Upstream error")
-        for status in [403, 404, 429, 500, 503]
-    ],
-    ids=["forbidden", "not-found", "rate-limited", "server-error", "unavailable"],
-    indirect=True,
-)
-def test_preserves_upstream_http_error(github_client, github_response, github_requests):
+def test_preserves_upstream_http_error(
+    github_client_factory, upstream_error_response, github_requests
+):
+    github_client = github_client_factory(upstream_error_response)
+
     with pytest.raises(httpx.HTTPStatusError) as caught:
         github_client.list_public_gists("octocat")
 
-    assert caught.value.response is github_response
+    assert caught.value.response is upstream_error_response
     assert len(github_requests) == 1
 
 
 @pytest.mark.mock
-@pytest.mark.parametrize(
-    "github_response",
-    [
-        httpx.ConnectTimeout("Simulated connect timeout"),
-        httpx.ReadTimeout("Simulated read timeout"),
-        httpx.WriteTimeout("Simulated write timeout"),
-        httpx.PoolTimeout("Simulated pool timeout"),
-    ],
-    ids=["connect", "read", "write", "pool"],
-    indirect=True,
-)
 def test_preserves_timeout_without_retry(
-    github_client, github_response, github_requests
+    github_client_factory, timeout_error, github_requests
 ):
+    github_client = github_client_factory(timeout_error)
+
     with pytest.raises(httpx.TimeoutException) as caught:
         github_client.list_public_gists("octocat")
 
-    assert caught.value is github_response
+    assert caught.value is timeout_error
     assert len(github_requests) == 1
 
 
 @pytest.mark.mock
-@pytest.mark.parametrize(
-    "github_response",
-    [
-        httpx.ConnectError("Simulated connection failure"),
-        httpx.ReadError("Simulated read failure"),
-    ],
-    ids=["connect", "read"],
-    indirect=True,
-)
 def test_preserves_network_error_without_retry(
-    github_client, github_response, github_requests
+    github_client_factory, network_error, github_requests
 ):
+    github_client = github_client_factory(network_error)
+
     with pytest.raises(httpx.NetworkError) as caught:
         github_client.list_public_gists("octocat")
 
-    assert caught.value is github_response
+    assert caught.value is network_error
     assert len(github_requests) == 1
