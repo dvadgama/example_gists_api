@@ -20,7 +20,7 @@ RUN uv sync --locked --no-dev --no-install-project --no-cache
 RUN groupadd --gid 10001 app \
     && useradd --uid 10001 --gid app --no-create-home --shell /usr/sbin/nologin app
 
-COPY app ./app
+COPY src/app ./app
 
 USER app
 EXPOSE 8080
