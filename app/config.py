@@ -84,7 +84,29 @@ def _validate_github_timeout_seconds(value: str) -> None:
         raise ValueError(error_message)
 
 
+def _get_log_level() -> str:
+    file_settings = dotenv_values(".env")
+    default_level = file_settings.get("LOG_LEVEL", "INFO") or ""
+    log_level = getenv("LOG_LEVEL", default_level)
+    _validate_log_level(log_level)
+    return log_level.strip().upper()
+
+
+def _validate_log_level(value: str) -> None:
+    if not isinstance(value, str) or value.strip().upper() not in (
+        "DEBUG",
+        "INFO",
+        "WARNING",
+        "ERROR",
+        "CRITICAL",
+    ):
+        raise ValueError(
+            "LOG_LEVEL must be one of DEBUG, INFO, WARNING, ERROR, CRITICAL"
+        )
+
+
 @dataclass(frozen=True)
 class Settings:
     github_base_url: str = field(default_factory=_get_github_base_url)
     github_timeout_seconds: float = field(default_factory=_get_github_timeout_seconds)
+    log_level: str = field(default_factory=_get_log_level)
