@@ -1,6 +1,6 @@
 # Project plan
 
-I have treated the [original README](../README.md#original-readme) as the requirements document. The project's Gist endpoint will be `/v1/user/{username}/gists`, an intentional change from the original root-level path. No compatibility alias is planned.
+I have treated the [original README](../README.md#original-readme) as the requirements document. The project's Gist endpoint will be `/v1/{username}`, an intentional change from the original root-level path. No compatibility alias is planned.
 
 ## Project Objectives
 

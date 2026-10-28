@@ -53,8 +53,18 @@ app/
   github.py        # GitHub requests and response handling
   config.py        # Environment settings
 tests/
-  test_api.py
-  test_github.py
+  conftest.py      # Shared settings fixture
+  unit/
+    config/
+      conftest.py  # Isolated environment and temporary working directory
+      test_get_github_base_url.py
+      test_validate_github_base_url.py
+      test_get_github_timeout_seconds.py
+      test_validate_github_timeout_seconds.py
+    github/
+      conftest.py  # Mocked HTTP client, responses, and captured requests
+      test_list_public_gists.py
+  integration/    # Tests grouped by feature as they are added
 ```
 
 This gives the code clear responsibility boundaries, following clean-architecture principles without introducing layers that have no work to do. The GitHub client does not depend on FastAPI. It returns Python data or raises an integration error, which the route translates into an HTTP response.
@@ -67,7 +77,7 @@ Keeping the routes in their own module makes the `/v1` prefix easy to register. 
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/v1/user/{username}/gists` | Return a JSON array of the user's public Gists |
+| `GET` | `/v1/{username}` | Return a JSON array of the user's public Gists |
 | `GET` | `/health` | Optional local health check returning `{"status":"ok"}` |
 
 The versioned path is the project's only Gist endpoint. This is an intentional change from `/{username}` in the original requirements; there will be no compatibility alias. Root-level username requests return `404`. Keeping `/v1` in the path leaves room for a future API version without changing existing clients' URLs.
@@ -83,7 +93,7 @@ Calls to GitHub use anonymous access. The app will not accept, configure, or sen
 If pagination is included, callers can request one page at a time:
 
 ```http
-GET /v1/user/octocat/gists?page=2&per_page=30
+GET /v1/octocat?page=2&per_page=30
 ```
 
 | Parameter | Default | Accepted values |
@@ -94,7 +104,7 @@ GET /v1/user/octocat/gists?page=2&per_page=30
 Invalid or repeated pagination parameters return `400`. The body stays a JSON array. Navigation is provided through the `Link` response header:
 
 ```http
-Link: </v1/user/octocat/gists?page=1&per_page=30>; rel="prev", </v1/user/octocat/gists?page=3&per_page=30>; rel="next"
+Link: </v1/octocat?page=1&per_page=30>; rel="prev", </v1/octocat?page=3&per_page=30>; rel="next"
 ```
 
 These links come from GitHub's pagination metadata and are rewritten to point to our API. They retain the username and page size. Upstream link targets are checked before local URLs are built.
@@ -129,7 +139,7 @@ sequenceDiagram
     participant Client as GitHub client
     participant GitHub as GitHub REST API
 
-    Caller->>Route: GET /v1/user/octocat/gists?page=2&per_page=30
+    Caller->>Route: GET /v1/octocat?page=2&per_page=30
     Route->>Route: Validate username and page options
     Route->>Client: Request the user's public Gists
     Client->>GitHub: GET /users/octocat/gists?page=2&per_page=30
