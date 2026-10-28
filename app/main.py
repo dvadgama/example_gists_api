@@ -12,6 +12,10 @@ from app.routes import router
 logger = logging.getLogger(__name__)
 
 
+def health() -> dict[str, str]:
+    return {"status": "ok"}
+
+
 def create_app(*, github_transport: httpx2.BaseTransport | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(application: FastAPI):
@@ -35,6 +39,7 @@ def create_app(*, github_transport: httpx2.BaseTransport | None = None) -> FastA
                 logger.info("Application stopping")
 
     application = FastAPI(title="GitHub API", lifespan=lifespan)
+    application.add_api_route("/health", health, methods=["GET"])
     application.include_router(router, prefix="/v1")
     return application
 
