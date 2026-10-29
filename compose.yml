@@ -8,6 +8,10 @@ services:
     env_file:
       - path: .env
         required: false
+    environment:
+      GITHUB_BASE_URL: "${GITHUB_BASE_URL-https://api.github.com}"
+      GITHUB_TIMEOUT_SECONDS: "${GITHUB_TIMEOUT_SECONDS-5}"
+      LOG_LEVEL: "${LOG_LEVEL-INFO}"
     healthcheck:
       test:
         - CMD
