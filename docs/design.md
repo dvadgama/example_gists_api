@@ -4,93 +4,94 @@
 
 This service lists a GitHub user's public Gists through a small Python API. It accepts a username, calls GitHub, and returns the results as JSON. The application runs in Docker on port `8080`.
 
-## 2. Goals, scope, and constraints
+## 2. Project scope
 
-The [original requirements](../README.md#original-readme) ask for:
+The [original requirements](../README.md#original-readme) define the project brief. The [plan](plan.md) describes the implementation order; this document explains the design and trade-offs.
 
-- a public Gists API
-- an automated test
-- a Dockerfile
-- clear setup instructions
-
-| Priority | Scope |
+| Category | Scope |
 | --- | --- |
-| Required | Public Gist retrieval, automated tests, Docker packaging on port `8080`, and run instructions |
+| Required features | Public Gist retrieval, automated tests, Docker packaging on port `8080`, and run instructions |
 | Development setup | A reusable VS Code Dev Container with Python, dependencies, debugging, and test tools |
-| Optional, if time permits | Health, pagination and navigation links, caching, a CI/CD pipeline, and a simple frontend |
-| Outside of scope | Caller authentication and authorisation, incoming API rate limiting, automatic retries for GitHub rate limits, and HTTPS termination for incoming traffic |
+| Optional features | Health is implemented. Pagination and navigation links, caching, a CI/CD pipeline, and a frontend remain optional future work. |
 
+The detailed security boundaries are listed under [Security and operation](#10-security-and-operation).
 
 ## 3. System architecture
 
-The application sits between an API caller and GitHub. GitHub owns the Gist data; this service retrieves it and exposes it through its own HTTP interface.
+The API fetches public Gists from GitHub and returns them to the caller.
 
 ```mermaid
 flowchart LR
     Caller["API caller"]
     subgraph App["Python application · Docker · port 8080"]
         Routes["FastAPI routes"]
-        Client["GitHub client · HTTPX"]
-        Health["Health handler · optional"]
-        Routes -->|"Username and page options"| Client
-        Routes -->|"/health"| Health
+        Client["GitHub client · HTTPX2"]
+        Health["Health handler"]
+        Routes -->|"Username"| Client
     end
     GitHub["GitHub REST API"]
-    Caller -->|"HTTP GET"| Routes
-    Client -->|"HTTPS · Gists and pagination"| GitHub
+    Caller -->|"GET /v1/{username}"| Routes
+    Caller -->|"GET /health"| Health
+    Client -->|"HTTPS · Public Gists"| GitHub
 ```
 
-The routes handle request validation and HTTP responses. The GitHub client handles outbound requests, upstream data, and integration errors. Health is a local check and has no dependency on GitHub.
 
-The app keeps no persistent local data. Caching, if added later, would be a separate decision because it introduces state and a freshness policy.
 
-### Code organisation
+### Component responsibilities
 
-```text
-app/
-  main.py          # Application setup, health, and router registration
-  routes.py        # Versioned Gist routes
-  github.py        # GitHub requests and response handling
-  config.py        # Environment settings
-tests/
-  conftest.py      # Shared settings fixture
-  unit/
-    config/
-      conftest.py  # Isolated environment and temporary working directory
-      test_get_github_base_url.py
-      test_validate_github_base_url.py
-      test_get_github_timeout_seconds.py
-      test_validate_github_timeout_seconds.py
-    github/
-      conftest.py  # Mocked HTTP client, responses, and captured requests
-      test_list_public_gists.py
-  integration/    # Tests grouped by feature as they are added
+- At startup, the app loads settings, configures logging, and creates a shared HTTP client. At shutdown, it closes the client.
+- The API validates incoming requests and converts GitHub failures into HTTP error responses.
+- A GitHub client retrieves public Gists and validates the returned data.
+- The health endpoint confirms that the application is responding.
+
+
+Future API versions can use separate routers and share the GitHub client.
+
+## 4. API design
+
+- `GET /v1/{username}` returns public Gists as a JSON array.
+- Gist fields are returned as provided by GitHub.
+- `/v1` allows future API versions. The root-level `/{username}` path is not supported.
+- Optional: `GET /health` confirms that the application is responding.
+
+See the [README](../README.md#use-the-api) for usage and error responses.
+
+## 5. Request flows
+
+### Retrieving Gists
+
+```mermaid
+sequenceDiagram
+    participant Caller as API caller
+    participant Route as Gist route
+    participant Client as GitHub client
+    participant GitHub as GitHub REST API
+
+    Caller->>Route: GET /v1/octocat
+    Route->>Route: Validate username
+    Route->>Client: Request the user's public Gists
+    Client->>GitHub: GET /users/octocat/gists
+    GitHub-->>Client: JSON data
+    Client->>Client: Validate response status and data
+    Client-->>Route: Public Gists
+    Route-->>Caller: 200 JSON array
 ```
 
-This gives the code clear responsibility boundaries, following clean-architecture principles without introducing layers that have no work to do. The GitHub client does not depend on FastAPI. It returns Python data or raises an integration error, which the route translates into an HTTP response.
+## 6. Errors
 
-Keeping the routes in their own module makes the `/v1` prefix easy to register. A future version can have a separate router while sharing the GitHub client where the behaviour is unchanged.
+GitHub failures will be mapped to HTTP errors. Requests will not be retried automatically.
 
-## 4. API and data design
+See the [README error table](../README.md#use-the-api) for status codes.
 
-### Routes
+## 7. Optional features
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/v1/{username}` | Return a JSON array of the user's public Gists |
-| `GET` | `/health` | Optional local health check returning `{"status":"ok"}` |
+### Health check (implemented)
 
-The versioned path is the project's only Gist endpoint. This is an intentional change from `/{username}` in the original requirements; there will be no compatibility alias. Root-level username requests return `404`. Keeping `/v1` in the path leaves room for a future API version without changing existing clients' URLs.
+The health endpoint will confirm that the application is responding.
 
-### Gist response
+### Pagination (not implemented)
 
-The response retains GitHub's existing Gist fields. An empty result returns `200` with `[]`; an empty list alone does not establish that the account is missing.
-
-Calls to GitHub use anonymous access. The app will not accept, configure, or send a GitHub API token, and only public Gists are returned.
-
-### Pagination
-
-If pagination is included, callers can request one page at a time:
+The proposed extension would let callers request one page at a time:
 
 ```http
 GET /v1/octocat?page=2&per_page=30
@@ -107,114 +108,77 @@ Invalid or repeated pagination parameters return `400`. The body stays a JSON ar
 Link: </v1/octocat?page=1&per_page=30>; rel="prev", </v1/octocat?page=3&per_page=30>; rel="next"
 ```
 
-These links come from GitHub's pagination metadata and are rewritten to point to our API. They retain the username and page size. Upstream link targets are checked before local URLs are built.
+The GitHub client will send the requested `page` and `per_page` to GitHub. The API will use GitHub's validated pagination links to build local `next`/`prev` links, preserving the username and page size. Following a link repeats this flow for that page.
 
-A client can show a Next button when `rel="next"` exists, or follow next links until none remain. On the final page there is no next relation. If neither direction is available, the response has no `Link` header. A full page is not enough evidence that another page exists.
+The `Link` header will be omitted when neither link is available.
 
-This version does not calculate total counts, add first/last links, or fetch every page automatically.
-
-### Errors
-
-Errors use JSON, for example `{"detail":"GitHub request timed out"}`.
-
-| Problem | Response |
-| --- | --- |
-| Invalid username or pagination input | `400` |
-| Unknown route, or GitHub explicitly reports user not found | `404` |
-| Unsupported HTTP method | `405` |
-| Recognised GitHub rate limit | `503` |
-| GitHub request timed out | `504` |
-| Other GitHub HTTP/network failure or invalid response data | `502` |
-
-Reporting a GitHub rate limit is different from retrying it. The app returns an error and passes on a valid upstream `Retry-After` when available; automatic retries are outside scope. Incoming API rate limiting is also outside scope, so this design does not add a local `429` response.
-
-## 5. Request flows
-
-### Retrieving a page of Gists
-
-```mermaid
-sequenceDiagram
-    participant Caller as API caller
-    participant Route as Gist route
-    participant Client as GitHub client
-    participant GitHub as GitHub REST API
-
-    Caller->>Route: GET /v1/octocat?page=2&per_page=30
-    Route->>Route: Validate username and page options
-    Route->>Client: Request the user's public Gists
-    Client->>GitHub: GET /users/octocat/gists?page=2&per_page=30
-    GitHub-->>Client: JSON data and pagination headers
-    Client-->>Route: Public Gists and page information
-    Route-->>Caller: 200 JSON array and local Link header
-```
-
-For the next page, the caller follows the returned link. That creates another request through the same flow; the server does not collect all pages in the background.
-
-### Checking health
-
-The optional `/health` route returns `200` immediately without making a GitHub request. A GitHub outage therefore affects Gist retrieval, but not the local health response.
-
-## 6. Technology and design decisions
+## 8. Technology and design decisions
 
 ### Technology choices
 
 | Component | Choice | Why I'm using it |
 | --- | --- | --- |
 | Language | Python | It's the language I'm most comfortable reading and writing. |
-| API framework | FastAPI | It provides routing, validation, and JSON responses with little setup. Async support is useful while waiting for GitHub. |
+| API framework | FastAPI | It provides routing, validation, and JSON responses with little setup. Async support can be useful while waiting for GitHub. |
 | Server | Uvicorn | It runs FastAPI through ASGI and works for development and the runtime container. |
-| HTTP client | HTTPX | It supports connection reuse, timeouts, and mocked HTTP responses in tests. |
+| HTTP client | HTTPX2 | It supports connection reuse, timeouts, and mocked HTTP responses in tests. |
 | Tests | pytest | I've used it before and like its fixtures and parameterised tests. |
-| Dependencies | uv, `pyproject.toml`, and `uv.lock` | I prefer uv for its speed and dependency/environment management. The lockfile records the versions used by the project. |
-| Formatting and linting | Ruff | One tool handles both jobs, so there is less to configure. |
-| Development | VS Code Dev Container | It provides a shared Python and editor setup without changing the host Python installation. |
-| Packaging | Docker | It meets the brief and lets reviewers run the app without installing its Python dependencies globally. |
+| Dependencies | uv, `pyproject.toml`, and `uv.lock` | I prefer uv for its speed, dependency and environment management.|
+| Formatting and linting | Ruff | One tool handles both jobs. |
+| Logging | Python's standard library | Plain-text messages on standard output are enough. |
+| Development | VS Code Dev Container | It provides a shared Python and editor setup without interfeatring with the host. |
+| Packaging | Docker | It meets the requirement and lets user run the app without installing any Python dependencies.|
 
 ### Decisions and trade-offs
 
 | Decision | Reason and trade-off |
 | --- | --- |
-| A small app with a separate GitHub client | This is enough separation to test the integration independently. A larger domain/service structure would add little while the app mainly retrieves and returns data. |
-| A JSON array with pagination links in headers | This preserves the list response and lets clients choose which pages to fetch. Clients need to read the `Link` header to discover more results. |
-| No database | GitHub is the source of the data and this version does not store it. Each Gist request depends on GitHub being available. |
-| One shared HTTPX client | Reusing connections avoids creating a client for each request. Startup and shutdown own its lifecycle. |
-| No automatic retries | Response times and upstream call counts stay easier to understand. Callers may need to retry failed requests themselves. |
-| Caching left as optional | It could save GitHub requests, but introduces stale data and cache-lifecycle decisions. |
+| Separate GitHub client | Makes GitHub calls independently testable without adding unnecessary layers. |
+| JSON array of Gists | Keeps the response simple and preserves GitHub's fields. |
+| Health check (optional) | Gives container tooling a simple way to check whether the app is responding. |
+| Pagination (optional) | `Link` headers keep the body unchanged; clients must read them to find more pages. |
+| No database | No local storage to manage; requests depend on GitHub's availability. |
+| Shared HTTP client | Reuses connections; the app must manage its startup and shutdown. |
+| No automatic retries | Avoids additional waits and GitHub calls; callers decide whether to retry. |
+| Caching (optional) | Could reduce GitHub calls, but adds stale data and cache-expiry decisions. |
 
-## 7. Security and operation
+## 9. Logging
 
-Caller authentication, authorisation, incoming API rate limiting, and HTTPS termination for incoming traffic are outside this project's scope. Basic protections remain part of the design.
+- Logs will use plain text on standard output, with a timestamp, level, module, and message.
+- Startup and shutdown will use `INFO`; GitHub `4xx` failures will use `WARNING`.
+- GitHub `5xx` failures, timeouts, network errors, and invalid responses will use `ERROR`.
+- Failure details will be limited to status codes and exception types.
+- `LOG_LEVEL` will control application logs. Uvicorn will handle access logs.
 
-Basic handling still matters: usernames and page options are validated, outbound URLs stay restricted to GitHub, and HTTPS certificate verification remains enabled for GitHub calls.
+## 10. Security and operation
 
-| Environment variable | Default | Purpose |
-| --- | --- | --- |
-| `GITHUB_TIMEOUT_SECONDS` | `5` | Timeout in seconds for individual HTTP operations |
+### In scope
 
-The timeout setting must be a finite, positive number. The default is five seconds for operations such as connecting or waiting for data; it is not a five-second deadline for the entire request. Invalid configuration stops startup with a useful error.
+- Validate usernames before building upstream request paths.
+- Use HTTPS with certificate verification for outbound GitHub requests.
+- Reject invalid configuration during startup.
+- Keep failure logs and public error responses free of upstream payloads and credentials.
+- Run the runtime container as a non-root user to limit its privileges.
+- Validate pagination parameters if pagination is implemented.
 
-The app listens on `0.0.0.0:8080`. Logs go to standard output and include request status, duration, and errors, without exposing Gist contents. Shutdown closes the shared HTTPX client.
+### Out of scope
 
-## 8. Development, deployment, and testing
+- Caller authentication and authorisation
+- Incoming API rate limiting
+- Automatic retries for GitHub rate limits
+- HTTPS termination for incoming traffic
 
-The Dev Container includes Python, uv, debugging, pytest, coverage tooling, and Ruff. The runtime image uses the same pinned Python version and locked runtime dependencies, with development tools left out. It runs as a non-root user with minimal privileges and includes the certificates needed for GitHub HTTPS calls.
+### Configuration validation
 
-The deployment is one application container exposing port `8080` and making outbound HTTPS calls to GitHub. No database, queue, or additional service is needed. Exact setup and run commands belong in the README.
+Validate configuration before starting the server: require an HTTPS base URL, a finite positive timeout, and a supported log level.
 
-Tests are written before the implementation of each behaviour, as described in the plan. Most use mocked GitHub responses at the HTTP transport boundary, so the real application and client code can run without internet access.
+See the [README](../README.md#configuration) for settings and defaults.
 
-| Area | Examples |
-| --- | --- |
-| Gist retrieval | Public results, empty arrays, and correct anonymous GitHub requests |
-| Error handling | Invalid input, unsupported methods, unknown routes, upstream failures, rate limits, and timeouts |
-| Pagination, if included | Defaults, invalid values, first/middle/final pages, empty pages, and local navigation links |
-| Health, if included | Success without a GitHub call, including during a simulated upstream failure |
+## 11. Development and testing
 
-The coverage target is at least 85%, alongside assertions about actual behaviour. Coverage helps identify untested code; the percentage alone does not prove the app is correct.
+See the [developer guide](development.md) for environment setup, test organisation, fixtures, coverage, and code checks. The [plan](plan.md#steps) describes the test-first implementation approach.
 
-A separate live check builds and runs the image, then requests Gists for `octocat`. It checks the returned structure without relying on fixed Gist IDs or assuming that octocat always has another page.
-
-## 9. Risks
+## 12. Risks
 
 | Item | Implication |
 | --- | --- |
@@ -230,7 +194,7 @@ A separate live check builds and runs the image, then requests Gists for `octoca
 - [GitHub Gists API](https://docs.github.com/en/rest/gists/gists#list-gists-for-a-user)
 - [GitHub pagination](https://docs.github.com/en/rest/using-the-rest-api/using-pagination-in-the-rest-api)
 - [FastAPI testing](https://fastapi.tiangolo.com/tutorial/testing/)
-- [HTTPX timeouts](https://www.python-httpx.org/advanced/timeouts/)
+- [HTTPX2 timeouts](https://pydantic.dev/docs/httpx2/advanced/timeouts/)
 - [VS Code Dev Containers](https://code.visualstudio.com/docs/devcontainers/containers)
 - [The Twelve-Factor App](https://12factor.net/)
 - [GitLab design document template](https://handbook.gitlab.com/handbook/engineering/architecture/design-documents/_template/)

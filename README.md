@@ -1,149 +1,151 @@
 # GitHub API
 
-A Python API for listing a GitHub user's public Gists.
+A small HTTP API for listing a GitHub user's public Gists. There are two ways to get started:
 
-Gist requests use `/v1/{username}`. This versioned path is an intentional change from the root-level username path in the original requirements. The app will call GitHub anonymously, with no API token configuration. Health and pagination are optional additions.
+- Run the app locally with Docker Compose.
+- Use the build script to create an image in CI/CD and deploy it.
 
-## Useful reference documents
+## Working on the code?
 
-- [Application design](docs/design.md)
-- [Implementation plan](docs/plan.md)
-- [Original README](#original-readme)
+See the [developer guide](docs/development.md) for setting up development environment.
 
-## Accepted API Requests
+## Prerequisites
+`Docker` and `Docker compose` must be installed and running on the host.
 
-| Request | Endpoint | Behaviour |
-| --- | --- | --- |
-| `GET` | `/v1/{username}` | Return the first page of the user's public Gists as a JSON array |
-| `GET` | `/v1/{username}?page=2&per_page=30` | Return the requested page of public Gists |
-| `GET` | `/health` | Return `200` with `{"status":"ok"}` |
+## Run locally
 
-## Run with Docker
-
-Prerequisite: Docker with a running container engine. Python does not need to be installed on the host for this workflow.
-
-Run these commands from the repository root once implementation is complete:
+Run the following from the repository root, in a terminal:
 
 ```bash
-docker build -t github-api .
-docker run --rm -p 8080:8080 github-api
+docker compose up
 ```
 
-In another terminal, request Gists and include the response headers to inspect pagination:
+This builds the runtime image and starts the API at `http://localhost:8080`.
+
+Try it:
 
 ```bash
-curl -i 'http://localhost:8080/v1/octocat?page=1&per_page=2'
 curl -i http://localhost:8080/health
+curl -i http://localhost:8080/v1/octocat
 ```
 
-## Develop with VS Code
-
-Prerequisites: VS Code, its Dev Containers extension, and Docker.
-
-1. Open the repository in VS Code.
-2. Select **Dev Containers: Reopen in Container**.
-3. Wait for the container to build. uv installs the Python version specified by `requires-python` in `pyproject.toml`.
-4. Check the tools in the container terminal:
-
-   ```bash
-   uv --version
-   python --version
-   ```
-
-The setup includes Python, uv, pytest, pytest-cov, Ruff, and pre-commit. VS Code has Python test discovery and Ruff formatting enabled. The Dev Container installs the locked development dependencies and Git commit hooks after creation. The GitHub client and configuration have unit tests; the HTTP server and runtime Dockerfile will follow later.
-
-The Python version is defined only in `pyproject.toml`; there is no `.python-version` file. After changing it, use **Dev Containers: Rebuild Container**. The virtual environment lives at `/home/vscode/.venv`, outside the mounted source folder, and the container runs as the non-root `vscode` user.
-
-To build and check the development image without opening VS Code, run these commands from the repository root:
+View logs or stop the app:
 
 ```bash
-docker build -f .devcontainer/Dockerfile -t github-api-dev .
-docker run --rm github-api-dev uv --version
-docker run --rm github-api-dev python --version
+docker compose logs -f
+docker compose down
 ```
 
-## Tests and code checks
-
-Inside the development environment:
+If port `8080` is already in use, choose another host port:
 
 ```bash
-uv run --locked pre-commit run --all-files
-uv run --locked ruff check .
-uv run --locked ruff format --check .
-uv run --locked pytest
+API_PORT=8081 docker compose up
 ```
 
-The commit hooks check linting and formatting, then run the default test suite when Python files are staged. They report problems without automatically modifying files. Test failures block commits. To apply formatting, run `uv run --locked ruff format .`.
+The API is then available at `http://localhost:8081`.
 
-The hooks are installed for the container environment, so make commits from VS Code while connected to the Dev Container or from its terminal. If setting up another uv environment, install its dependencies and hooks there:
+*Note: There is no live reload in this runtime container.*
 
-```bash
-uv sync --locked
-uv run --locked pre-commit install
-```
+## Use the API
 
-Check the project's 85% coverage target with:
+| Request | Response |
+| --- | --- |
+| `GET /v1/{username}` | `200` with a JSON array of public Gists, retaining GitHub's Gist fields |
+| `GET /health` | `200` with `{"status":"ok"}` |
 
-```bash
-uv run --locked pytest --cov=app --cov-branch --cov-report=term-missing --cov-fail-under=85
-```
+A successful request with no public Gists returns `200` with `[]`.
 
-The current tests cover configuration and a successful GitHub client request. They use temporary configuration files and mocked GitHub responses, so they can run offline. Unit tests live under `tests/unit/<component>/test_<function>.py`. Shared fixtures belong in `conftest.py`: general settings at the test root, config isolation under `unit/config`, and mocked HTTP clients under `unit/github`.
+Errors return JSON, such as `{"detail":"GitHub user not found"}`:
 
-Integration tests will live under `tests/integration/<feature>`. Tests that call live GitHub must be marked `real`; they are excluded by default, including in pre-commit. No integration tests have been added yet.
+| Status | Meaning |
+| --- | --- |
+| `400` | Invalid username |
+| `404` | Unknown route, or GitHub reports that the user was not found |
+| `405` | Unsupported HTTP method |
+| `502` | Other GitHub HTTP/network failure or invalid response |
+| `503` | Recognised GitHub rate limit; a valid `Retry-After` header is passed on when available |
+| `504` | GitHub request timed out |
 
-Run one component, one function's tests, or (once added) the live integration tests:
 
-```bash
-uv run --locked pytest tests/unit/config
-uv run --locked pytest tests/unit/github/test_list_public_gists.py
-uv run --locked pytest tests/integration -m real
-```
+## Things to know
 
-I'll also run the container and use the curl commands above to check the live connection to GitHub.
+1. The API returns only the first page of public Gists. Pagination and caching are not supported.
+
+2. Gist requests depend on GitHub availability and anonymous-access limits. The app does not retry automatically.
+
+3. A successful health check means this app is responding, not that GitHub is available.
 
 ## Configuration
 
-For local development, run commands from the repository root. If you do not already have a `.env` file, create one from the example:
+Settings are passed to the container at startup.
+
+### Compose
+
+The defaults are enough to start the app. To override them for a Compose run, set environment variables before the command:
 
 ```bash
-cp .env.example .env
-uv sync --locked
+GITHUB_TIMEOUT_SECONDS=10 LOG_LEVEL=WARNING docker compose up
 ```
 
-Edit `.env` to change the configuration:
+Alternatively, edit the `environment` section in `compose.yml` to set values for your local setup.
 
-```dotenv
-GITHUB_BASE_URL=https://api.github.com
-GITHUB_TIMEOUT_SECONDS=5
-```
+You can also provide these settings through a local `.env` file. Values supplied in the shell take priority.
 
-`Settings()` reads `.env` from the current working directory. Environment variables take priority over `.env`, and built-in defaults are used when neither supplies a value. The file is optional. Restart the application after changing settings.
-
-Each configuration getter validates its value before returning it. Use `Settings()` to load validated configuration; supplying field values directly to the dataclass bypasses those getters and their validation.
-
-Both mocked and live clients use the same settings; mocked tests replace the HTTP transport, not the URL. Configuration tests use their own temporary directory so your local `.env` cannot affect them.
-
-| Environment variable | Default | Purpose |
+| Setting | Default | Purpose |
 | --- | --- | --- |
-| `GITHUB_BASE_URL` | `https://api.github.com` | Base URL for outgoing GitHub API requests |
-| `GITHUB_TIMEOUT_SECONDS` | `5` | Positive, finite timeout in seconds for connection, read, write, and connection-pool operations |
+| `GITHUB_BASE_URL` | `https://api.github.com` | Base URL for outgoing GitHub API requests; must be an absolute HTTPS URL |
+| `GITHUB_TIMEOUT_SECONDS` | `5` | Finite, positive timeout in seconds for individual connect, read, write, and connection-pool operations; not a total request deadline |
+| `LOG_LEVEL` | `INFO` | Minimum application-log severity: `DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL` |
+| `API_PORT` | `8080` | Host port used by Compose, not an application setting |
 
-The base URL must be an absolute HTTPS URL with a valid hostname and, if supplied, a port from `1` to `65535`. Credentials, query strings, fragments, whitespace, and backslashes are rejected. Custom HTTPS hosts and path prefixes are allowed; validation does not contact the server or check whether it is GitHub.
+- Invalid application settings stop startup.
+- `.env`, if used, stays local and is excluded from Git and Docker builds.
 
-The timeout accepts decimals, such as `2.5`. It applies to individual network operations, not the total duration of a request. Empty values, non-numeric values, zero, negative numbers, and infinity are rejected when settings are loaded.
+- `LOG_LEVEL` controls application logs, not Uvicorn's logs.
 
-Commit `.env.example`, but keep `.env` local. `.env` and other `.env.*` files are already excluded from Git and Docker builds, with `.env.example` allowed in Git. No GitHub API token is needed.
+- After changing settings, run `docker compose up` again. `docker compose restart` does not apply environment changes.
 
-Once the runtime image is implemented, pass the same file to Docker rather than copying it into the image:
+
+### Docker
+
+For a deployment outside Compose, supply the same application variables through your deployment platform's container environment, or use Docker's `-e` option:
 
 ```bash
-docker run --rm --env-file .env -p 8080:8080 github-api
+docker run --rm -p 127.0.0.1:8080:8080 \
+  -e GITHUB_TIMEOUT_SECONDS=10 \
+  -e LOG_LEVEL=WARNING \
+  github-api
 ```
 
-The app will listen on `0.0.0.0:8080` and run as a non-root user. Settings will come from the environment and logs will go to standard output, without Gist contents.
+## Build an image in CI/CD
 
-Gist requests depend on GitHub being available and may hit its rate limits. Each request will fetch one page without caching initially. Results can also change between page requests as Gists are added or updated.
+Use a runner with a POSIX shell and access to a Docker engine. From the checked-out repository root:
+
+```bash
+./scripts/build.sh
+```
+
+The default image name is `github-api`. Supply an image tag to identify a pipeline build, for example:
+
+```bash
+./scripts/build.sh github-api:build-123
+```
+
+The script builds the root Dockerfile and returns Docker's exit status, so a failed build fails the pipeline step.
+
+## Container image
+
+- The image uses the Python version pinned in `pyproject.toml`.
+- Runtime dependencies are installed from `uv.lock`; development tools are excluded.
+- The application runs as a non-root user and listens on `0.0.0.0:8080`.
+- The `.env` file is not included in the image.
+
+## Further reading
+
+- [Developer guide](docs/development.md)
+- [Application design](docs/design.md)
+- [Project plan](docs/plan.md)
+- [Original README](#original-readme)
 
 ## Original README
 

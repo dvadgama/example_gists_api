@@ -1,8 +1,6 @@
 # Project plan
 
-I have treated the [original README](../README.md#original-readme) as the requirements document. The project's Gist endpoint will be `/v1/{username}`, an intentional change from the original root-level path. No compatibility alias is planned.
-
-## Project Objectives
+## Objectives
 
 ### Mandatory
 
@@ -12,51 +10,29 @@ I have treated the [original README](../README.md#original-readme) as the requir
 
 ### Optional
 
-- Health check
+- Health check (implemented)
 - Pagination
 - Caching
 - CI/CD pipeline
 - Frontend
 
-### Out of scope
-
-- Automatic retries when GitHub rate-limits a request
-- Incoming API rate limiting
-- Caller authentication and authorisation
-- HTTPS termination for incoming traffic
-- GitHub API token configuration requests to GitHub will be anonymous
+Security boundaries and exclusions are defined in the [design](design.md#10-security-and-operation).
 
 ## Steps
 
-1. **Set up the project.** Use a VS Code Dev Container for a reusable development environment. Choose the latest stable Python version at setup and pin it for development and the runtime image.
+1. **Set up development.** Create the VS Code Dev Container and pin Python for development and Docker.
 
-2. **Write tests.** Write tests for each behaviour before implementing it.
+2. **Build incrementally.** Write a test for one behaviour, implement it, then repeat.
 
-3. **Write code.** Implement one behaviour at a time and check that its tests pass.
+3. **Check quality.** Run tests and Ruff, review assertions, and aim for at least 85% coverage.
 
-4. **Check test coverage.** I'll aim for at least 85% coverage and review the assertions as well as the percentage to see what the tests actually verify.
+4. **Review security.** Check the implementation against the agreed [security scope](design.md#10-security-and-operation).
 
-5. **Repeat.** Repeat steps 2–4 until the project's mandatory goals are met.
+5. **Check Docker.** Build the image, start the container, and test the API.
 
-6. **Run it in Docker.** Build and check an image that listens on port `8080` and runs as a non-root user with minimal privileges. Use the image name `github-api` in the build and run commands.
+6. **Consider optional features.** Start these after the mandatory work is complete.
 
-7. **Optional features.** If time permits, add:
+## References
 
-   - `/health` check endpoint
-   - Pagination support
-   - Caching support
-   - A CI/CD pipeline
-   - A frontend UI
-
-8. **Security consideration.**
-
-   - In Scope
-     - Input validation
-     - outbound HTTPS verification
-     - safe logging
-     - non-root container
-
-   - out of scope
-     - Caller authentication and authorisation
-     - incoming API rate limiting
-     - HTTPS termination
+- [Original requirements](../README.md#original-readme)
+- [Application design](design.md)
