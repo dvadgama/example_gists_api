@@ -15,16 +15,19 @@ class GitHubClient:
         self._http_client = http_client
 
     def list_public_gists(self, username: str) -> list[dict[str, object]]:
-        encoded_username = quote(username, safe="")
+        encoded_username = quote(
+            username, safe=""
+        )  # Ensures that charcters like / are encoded as name rather than url path
+        # Makes url secure
         try:
             response = self._http_client.get(f"/users/{encoded_username}/gists")
             response.raise_for_status()
-        except httpx2.HTTPStatusError as error:
+        except httpx2.HTTPStatusError as error:  # Unsuccessful HTTP response
             status = error.response.status_code
             level = logging.ERROR if status >= 500 else logging.WARNING
             logger.log(level, "GitHub returned HTTP %s", status)
             raise
-        except httpx2.RequestError as error:
+        except httpx2.RequestError as error:  # This is to capture request/network error for e.g. 404 / 403 /429 etc
             logger.error("GitHub request failed: %s", type(error).__name__)
             raise
         try:
