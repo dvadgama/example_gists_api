@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
+  group: theRockBook
   cancel-in-progress: true
 
 env:
@@ -23,7 +23,7 @@ env:
 jobs:
   lint:
     name: Lint and formatting
-    runs-on: ubuntu-24.04
+    runs-on: local-runner
     timeout-minutes: 10
 
     steps:
@@ -46,7 +46,7 @@ jobs:
 
   tests:
     name: Tests and coverage
-    runs-on: ubuntu-24.04
+    runs-on: local-runner
     timeout-minutes: 10
 
     steps:
@@ -80,7 +80,7 @@ jobs:
 
   dependency-audit:
     name: Dependency vulnerabilities
-    runs-on: ubuntu-24.04
+    runs-on: local-runner
     timeout-minutes: 10
 
     steps:
@@ -113,7 +113,7 @@ jobs:
   image-check:
     name: Build, scan and check container
     needs: [lint, tests, dependency-audit]
-    runs-on: ubuntu-24.04
+    runs-on: local-runner
     timeout-minutes: 20
 
     env:
