@@ -153,10 +153,12 @@ jobs:
         run: |
           curl --fail --silent --show-error \
             --retry 10 --retry-delay 1 \
-            --retry-connrefused --retry-max-time 30 \
+            --retry-all-errors --retry-max-time 30 \
             --max-time 3 \
-            http://127.0.0.1:8080/health |
-            python3 -c 'import json, sys; assert json.load(sys.stdin) == {"status": "ok"}'
+            --output health.json \
+            http://127.0.0.1:8080/health
+
+          python3 -c 'import json; assert json.load(open("health.json")) == {"status": "ok"}'
 
           test "$(docker exec api-smoke id -u)" != "0"
 
