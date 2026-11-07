@@ -136,3 +136,88 @@ Run the checks and commit the updated `uv.lock`.
 
 Run Docker commands from a host terminal. See the [README](../README.md#run-locally) for build and run instructions.
 
+## Local Minikube deployment
+
+The CI workflow starts for:
+
+- Pull requests targeting the `solution` branch.
+- Pushes to the `solution` branch.
+- Manual `workflow_dispatch` runs.
+
+The lint, test, dependency-audit, and image-check jobs run for all three events. The `app-run` job has `if: github.event_name == 'push'`, so it deploys to local Minikube only after a push to `solution`; it does not deploy for pull requests or manual runs.
+
+On a deployment run, `app-run` builds the image on the self-hosted runner, loads it into the Minikube Docker runtime, and creates a Deployment and a NodePort Service in the `default` namespace.
+
+### Configure the self-hosted runner
+
+The deployment job uses `runs-on: local-runner`. Register the local machine as a repository runner before using the workflow:
+
+1. Open the GitHub repository and go to **Settings → Actions → Runners**.
+2. Select **New self-hosted runner**, choose the local operating system and architecture, and run the installation and registration commands shown by GitHub.
+3. Assign the custom label `local-runner` to the runner. It can be added in the runner's GitHub settings or during initial registration:
+
+   ```bash
+   ./config.sh --url <repository-url> \
+     --token <registration-token> \
+     --labels local-runner
+   ```
+
+4. Start the runner with `./run.sh`, or install and start it as a background service:
+
+   ```bash
+   ./svc.sh install
+   ./svc.sh start
+   ```
+
+Follow GitHub's documentation for [adding a self-hosted runner](https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/add-runners), [assigning custom labels](https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/apply-labels), and [running it as a service](https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/configure-the-application?platform=mac).
+
+The runner user must be able to run Docker and `kubectl`. Docker Desktop and Minikube must be running, the kubeconfig must contain the `minikube` context, and the Minikube Docker container must be named `minikube` because the workflow loads the image with `docker exec minikube`.
+
+### Inspect the deployment
+
+Check the deployed resources:
+
+```bash
+kubectl --context minikube --namespace default \
+  get deployment,pods,service
+```
+
+The Service output contains two ports, for example:
+
+```text
+PORT(S)
+8080:31812/TCP
+```
+
+- `8080` is the Service port inside Kubernetes.
+- `31812` is an example NodePort allocated from Kubernetes' default `30000-32767` range.
+- A NodePort is directly accessible only when the node IP is reachable from the host.
+
+### Access from macOS with the Docker driver
+
+With Minikube's Docker driver on macOS, the node runs inside Docker Desktop's Linux VM. Its IP is not directly routable from macOS, so `http://<minikube-ip>:<node-port>` does not work even though the pod and Service are healthy.
+
+Forward the Service to `localhost:8080`:
+
+```bash
+kubectl --context minikube --namespace default \
+  port-forward service/github-api 8080:8080
+```
+
+Keep that command running, then use the API from another terminal:
+
+```bash
+curl -i http://127.0.0.1:8080/health
+curl -i http://127.0.0.1:8080/v1/octocat
+```
+
+Alternatively, if the Minikube CLI is installed, run the following command and keep its terminal open:
+
+```bash
+minikube service github-api --namespace default --url
+```
+
+This prints a temporary localhost URL. See Minikube's [accessing applications](https://minikube.sigs.k8s.io/docs/handbook/accessing/) documentation for the Docker-driver networking limitations and other exposure options.
+
+The application does not define a route at `/`; use `/health` or `/v1/{username}`.
+
