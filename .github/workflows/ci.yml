@@ -190,3 +190,40 @@ jobs:
           path: image.tar
           compression-level: 0
           retention-days: 7
+
+  app-run:
+    name: Run app in local Minikube
+    if: github.event_name == 'push'
+    needs: image-check
+    runs-on: local-runner
+    timeout-minutes: 10
+
+    env:
+      IMAGE: github-api:${{ github.sha }}
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Build image locally
+        run: ./scripts/build.sh "$IMAGE"
+
+      - name: Load image into Minikube
+        run: |
+          docker image save "$IMAGE" |
+            docker exec --interactive minikube docker image load
+
+      - name: Run and expose application
+        run: |
+          kubectl --context minikube --namespace default \
+            delete deployment,service github-api --ignore-not-found
+          kubectl --context minikube --namespace default \
+            create deployment github-api --image="$IMAGE" --port=8080
+          kubectl --context minikube --namespace default \
+            expose deployment github-api --type=NodePort \
+            --port=8080 --target-port=8080
+          kubectl --context minikube --namespace default \
+            rollout status deployment/github-api --timeout=120s
+          kubectl --context minikube --namespace default \
+            get deployment,pods,service
